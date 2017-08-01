@@ -1,0 +1,22 @@
+{
+  "name": "mk-service-dubbox",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "example": "example"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lishengguo/mk-service-dubbox.git"
+  },
+  "author": "lsg",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/lishengguo/mk-service-dubbox/issues"
+  },
+  "homepage": "https://github.com/lishengguo/mk-service-dubbox#readme"
+}

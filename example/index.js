@@ -1,10 +1,10 @@
 const { config, start } = require("mk-server")
 const serverConfig = require("./config")
 
-const mk_service_dubbox = require("./services/mk-service-dubbox/index.js")
+const dubbox = require("./services/mk-service-dubbox/index.js")
 
 const services = { 
-    mk_service_dubbox,
+    dubbox,
 }
 
 config(serverConfig({ services }))

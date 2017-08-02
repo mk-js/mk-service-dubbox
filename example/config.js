@@ -18,7 +18,17 @@ const server = {
         // referrenced service
     },
     configs: {
-        // serviceName: {}
+        // serviceName: {} 
+        //http://localhost:8086/v1/user/ping?java2js=1&itf=com.rrtimes.user.itf.ILoginService
+        dubbo: {
+            application: {
+                name: "mk-server"
+            },
+            register: "zookeeper.rrtimes.com:2181",
+            dubboVer: "2.8.4a",
+            group: 'LISGA-PC',
+            timeout: 6000,
+        },
     },
 }
 

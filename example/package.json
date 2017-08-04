@@ -11,6 +11,7 @@
   "license": "MIT",
   "dependencies": {
     "mk-server": "^1.2.4",
+    "mk-service-auth": "^1.0.7",
     "node-zookeeper-dubbo": "^2.2.0"
   }
 }

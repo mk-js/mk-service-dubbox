@@ -2,6 +2,7 @@
  * server配置
  * 
  */
+const auth = require("mk-service-auth")
 
 const config = ({ services }) => {
     Object.assign(server.services, services)
@@ -16,17 +17,23 @@ const server = {
     interceptors: [],
     services: {
         // referrenced service
+        auth,
     },
     configs: {
         // serviceName: {} 
+        auth: {
+            key: "token/Key",
+            tokenKeys: ['userId', 'orgId'],
+            exclude: ['/user/login', '/user/ping', '/user/create'],
+        },
         //http://localhost:8086/v1/user/ping?java2js=1&itf=com.rrtimes.user.itf.ILoginService
         dubbox: {
             application: {
                 name: "mk-server"
             },
-            register: "zookeeper.rrtimes.com:2181",
-            dubboVer: "2.8.4a",
-            group: 'LISGA-PC',
+            register: "localhost:2181",
+            dubboVer: "2.8.4",
+            group: '',
             timeout: 6000,
         },
     },

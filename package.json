@@ -18,5 +18,10 @@
   "bugs": {
     "url": "https://github.com/lishengguo/mk-service-dubbox/issues"
   },
-  "homepage": "https://github.com/lishengguo/mk-service-dubbox#readme"
+  "homepage": "https://github.com/lishengguo/mk-service-dubbox#readme",
+  "dependencies": {
+    "mk-server": "^1.2.4",
+    "mk-service-auth": "^1.0.7",
+    "node-zookeeper-dubbo": "^2.2.0"
+  }
 }

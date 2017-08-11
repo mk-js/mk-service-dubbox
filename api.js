@@ -2,16 +2,17 @@ const NZD = require('node-zookeeper-dubbo');
 const services = require("./services")
 
 var config
-var nzd = null
+var nzdMeta = null
+var nzdService = null
 
 const api = {
     _init: (current) => {
         config = current
         config.dependencies = services
-        nzd = new NZD(config)
+        nzdService = nzdMeta = new NZD(config)
         proxy(services, api)
     },
-    proxy: proxy,
+    _proxy: proxy,
 }
 
 function proxy(services, api) {
@@ -25,14 +26,14 @@ function proxy(services, api) {
         }
         if (apiUrl) {
             //dubbox.api.ILoginService_Ping
-            api[key + "_" + methodName] = function (data, ctx) {
+            let handlerWrapper = api[key + "_" + methodName] = function (data, ctx) {
                 var argsInfo = services[key].methodSignature[methodName]()
                 var args = argsInfo.map(arg => {
                     let argValue = data[arg.$name]
                     let tokenInfo = arg.$token
-                    if (tokenInfo !== undefined && ctx.token) { 
+                    if (tokenInfo !== undefined && ctx.token) {
                         if (tokenInfo === "") {
-                            argValue = ctx.token 
+                            argValue = ctx.token
                         }
                         else if (tokenInfo.indexOf(",") != -1 || tokenInfo.indexOf(":") != -1) {
                             argValue = argValue || {}
@@ -47,15 +48,10 @@ function proxy(services, api) {
                     }
                     return argValue
                 })
-                nzd[key][methodName](...args)
-                    .then(result => {
-                        ctx.return(result)
-                    })
-                    .catch(ex => {
-                        ctx.error(ex)
-                    })
+                return nzdService[key][methodName](...args)
             }
-            api[key + "_" + methodName].apiUrl = serviceUrl + apiUrl.replace(/\,/g, "," + serviceUrl)
+
+            handlerWrapper.apiUrl = serviceUrl + apiUrl.replace(/\,/g, "," + serviceUrl) 
         }
     }))
 }

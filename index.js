@@ -31,6 +31,7 @@ config.current = {
     application: {
         name: "mk-server"
     },
+    mappingApi: [],
     register: "127.0.0.1:2181",
     dubboVer: "2.8.4",
     group: '',

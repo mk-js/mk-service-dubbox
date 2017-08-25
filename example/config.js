@@ -31,6 +31,7 @@ const server = {
             application: {
                 name: "mk-server"
             },
+            mappingApi: ["ILoginService.interfaceSerializer"],
             register: "localhost:2181",
             dubboVer: "2.8.4",
             group: '',

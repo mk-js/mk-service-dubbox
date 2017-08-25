@@ -25,6 +25,9 @@ module.exports = index;
 function config(options) {
     var current = config.current
     Object.assign(current, options)
+    if(!current.group){
+        current.group = undefined
+    }
     api._init(current)
 }
 config.current = {

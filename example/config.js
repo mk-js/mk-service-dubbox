@@ -25,14 +25,13 @@ const server = {
             key: "token/Key",
             tokenKeys: ['userId', 'orgId'],
             exclude: ['/user/login', '/user/ping', '/user/create'],
-        },
-        //http://localhost:8086/v1/user/ping?java2js=1&itf=com.rrtimes.user.itf.ILoginService
+        }, 
         dubbox: {
             application: {
                 name: "mk-server"
             },
-            mappingApi: ["ILoginService.interfaceSerializer"],
-            register: "localhost:2181",
+            discoveryInterfaces: ["com.mk.service.dubbox.itf.IDiscoveryService"],
+            register: "127.0.0.1:2181",
             dubboVer: "2.8.4",
             group: '',
             timeout: 6000,

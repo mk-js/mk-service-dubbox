@@ -1,6 +1,6 @@
 const NZD = require('node-zookeeper-dubbo')
 const moment = require("moment")
-const services = require("./../services")
+const discovery = require("./discovery")
 const { parseObj, regist } = require("./parse")
 
 var config
@@ -9,11 +9,12 @@ var nzdServer = null
 const api = {
     _init: (current) => {
         config = current
+        let services = generateServices(config.discoveryInterfaces, discovery)
         config.dependencies = services
         nzdServer = new NZD(config)
         config.services._delayStart = true
         nzdServer.client.once('connected', function () {
-            requestMapper(config.mappingApi, nzdServer)
+            requestMapper(config.dependencies, nzdServer)
             console.log('Connected to ZooKeeper.')
         });
         serviceProxy(services, api)
@@ -21,26 +22,35 @@ const api = {
     _proxy: serviceProxy,
 }
 
-function requestMapper(mappingApi) {
-    if (!mappingApi || mappingApi.length == 0) {
+function generateServices(interfaces, template) {
+    let services = {}
+    if (!interfaces || !Array.isArray(interfaces) || interfaces.length == 0) return services;
+    interfaces.forEach(itf => {
+        let name = itf.split(".").pop()
+        services[name] = Object.assign({}, template, { interface: itf })
+    })
+    return services
+}
+
+function requestMapper(services) {
+    let serviceNames = Object.keys(services)
+    if (!serviceNames || serviceNames.length == 0) {
         startServer()
         return;
     }
     nzdServer.client.getChildren("/dubbo", null, function (err, children) {
-        let itfs = children.join(",")
-        mappingApi.forEach((webapi, index) => {
-            let itf = webapi.substring(0, webapi.lastIndexOf("."))
-            let method = webapi.substr(itf.length + 1)
+        let method = "interfaceSerializer"
+        serviceNames.forEach((itf, index) => {
             if (nzdServer[itf] && nzdServer[itf][method]) {
                 nzdServer[itf][method](children).then(apiMapInfo => {
-                    // console.log(JSON.stringify(apiMapInfo))
+                    console.log(JSON.stringify(apiMapInfo))
                     bindApiMapper(apiMapInfo, nzdServer)
-                    if (index == mappingApi.length - 1) {
+                    if (index == serviceNames.length - 1) {
                         startServer()
                     }
                 }).catch(ex => {
                     console.log(ex)
-                    if (index == mappingApi.length - 1) {
+                    if (index == serviceNames.length - 1) {
                         startServer()
                     }
                 })
@@ -53,29 +63,31 @@ function bindApiMapper(mappers) {
     var apis = {}
     mappers.forEach(itf => {
         if (itf.fields) {
-            regist(itf.name, itf.fields)
-        } else {
-            let key = itf.name.split(".").pop()
-            itf.methodSignature = {}
-            itf.interface = itf.name
-            apis[key] = itf
-            itf.methods.forEach(methodInfo => {
-                methodInfo.parameters.forEach(arg => {
-                    let $class = arg.$class
-                    if (!$class) return;
-                    if ($class.indexOf("<") != -1) {
-                        arg.$realClass = $class
-                        arg.$class = $class.split("<")[0]
-                    } else if ($class.indexOf("[") > 0) {
-                        arg.$realClass = $class
-                        arg.$class = "[" + $class.split("[")[0]
-                    }
-                })
-                itf.methodSignature[methodInfo.name] = (data) => methodInfo.parameters.map(
-                    arg => Object.assign({}, arg, { $: data && data[arg.$name] || data })
-                )
-            })
+            return regist(itf.name, itf.fields)
         }
+        let key = itf.name.split(".").pop()
+        itf.methodSignature = {}
+        itf.interface = itf.name
+        apis[key] = itf
+        itf.methods.forEach(methodInfo => {
+            methodInfo.parameters.forEach(arg => {
+                let $class = arg.$class
+                if (!$class) return;
+                if ($class.indexOf("<") != -1) {
+                    arg.$realClass = $class
+                    arg.$class = $class.split("<")[0]
+                } else if ($class.indexOf("[") > 0) {
+                    arg.$realClass = $class
+                    arg.$class = "[" + $class.split("[")[0]
+                }
+            })
+            itf.methodSignature[methodInfo.name] = function (data) {
+                return methodInfo.parameters.map((arg, index) => {
+                    let value = data && data[arg.$name] || arguments[index] || data
+                    return Object.assign({}, arg, { $: value })
+                })
+            }
+        })
     })
     Object.assign(nzdServer.dependencies, apis)
     serviceProxy(apis, api)
@@ -94,8 +106,9 @@ function serviceProxy(services, api) {
     Object.keys(services).forEach(key => Object.keys(services[key].methodSignature).forEach(method => {
         let methodName = method.name || method
         let service = api[key] = (api[key] || {})
-        let serviceUrl = services[key].requestMapping["@"] || ""
-        let apiUrl = services[key].requestMapping[methodName] || ""
+        let requestMapping = services[key].requestMapping
+        let serviceUrl = requestMapping && requestMapping["@"] || ""
+        let apiUrl =  requestMapping && requestMapping[methodName] || ""
         while (serviceUrl.endsWith("/")) serviceUrl = serviceUrl.substring(0, serviceUrl.length - 1)
         //dubbox.api.ILoginService.Ping
         service[methodName] = function () {
@@ -105,9 +118,9 @@ function serviceProxy(services, api) {
             //dubbox.api.ILoginService_Ping
             let handlerWrapper = api[key + "_" + methodName] = function (data, ctx) {
                 var argsInfo = services[key].methodSignature[methodName](data)
-                var args = argsInfo.map(arg => parseArgObj(arg, ctx.token))
+                var args = argsInfo.map(arg => parseArgObj(arg, ctx))
                 console.log(`call dubbox api : ${key}.${methodName}`)
-                return nzdServer[key][methodName](...args).then(stringifyDate)
+                return nzdServer[key][methodName](...args).then(stringifyDate).catch(stringfyError)
             }
 
             handlerWrapper.apiUrl = serviceUrl + apiUrl.replace(/\,/g, "," + serviceUrl)
@@ -115,31 +128,70 @@ function serviceProxy(services, api) {
     }))
 }
 
-function parseArgObj(arg, token) {
+function stringfyError(err) {
+    let error = { message: err.message }
+    if (err && err.message.indexOf("com.rrtimes.rap.vo.BusinessException:") == 0) {
+        console.log("接口中未注明抛出业务异常：throws BusinessException;")
+        error.message = err.message.split('com.rrtimes.rap.vo.BusinessException:')[1]
+    }
+    if (err.cause && err.cause.code) {
+        error.code = err.cause.code
+    }
+    if (err.stack) {
+        error.stack = err.stack
+    }
+    throw (error)
+}
+
+function parseArgObj(arg, ctx) {
     let argValue = arg.$,
-        tokenInfo = arg.$token,
         argType = arg.$realClass || arg.$class
-    if (tokenInfo !== undefined && tokenInfo !== null && token) {
-        tokenInfo = tokenInfo.trim()
-        if (tokenInfo === "") {
-            argValue = token
-        }
-        else if (tokenInfo.indexOf(",") != -1 || tokenInfo.indexOf(":") != -1) {
-            argValue = argValue || {}
-            tokenInfo.split(",").map(info => info.trim().split(":")).forEach(info => {
-                let argKey = info[0]
-                let tokenKey = info[1] || argKey
-                argValue[argKey.trim()] = token[tokenKey.trim()]
-            })
-        } else if (argType && argType.indexOf("java.lang.") == 0) {
-            argValue = token[tokenInfo]
-        } else {
-            argValue[tokenInfo] = token[tokenInfo]
-        }
+    if (arg.$ctx !== undefined && arg.$ctx !== null) {
+        argValue = parseArgContext(arg, ctx)
     }
     argValue = parseObj(argValue, argType)
     argValue = argValue && argValue.$ || argValue
     return argValue
+}
+
+function parseArgContext(arg, ctx) {
+    let argValue = arg.$
+    let ctxInfos = arg.$ctx.trim().split(",")
+    let argType = arg.$realClass || arg.$class
+    let isValueArg = argType && argType.indexOf("java.lang.") == 0
+
+    if (ctxInfos[0] === "") {
+        argValue = getCtxKeyValue(ctx, "token")
+    } else {
+        ctxInfos.map(info => info.trim().split(":")).forEach(info => {
+            let argKey = info[0]
+            let ctxKey = info[1] || argKey
+            let ctxValue = getCtxKeyValue(ctx, ctxKey)
+            if (isValueArg) {
+                argValue = ctxValue
+            } else if (ctxInfos.length == 1 && info.length == 1 && ctxValue != null && typeof ctxValue == "object") {
+                argValue = ctxValue
+            } else {
+                argValue = argValue || {}
+                argValue[argKey.trim()] = ctxValue
+            }
+        })
+    }
+    return argValue
+}
+
+function getCtxKeyValue(ctx, key) {
+    if (!ctx._keys) {
+        let keys = {
+            token: Object.assign({}, ctx.token),
+            "query": Object.assign({}, ctx.request.url.query),
+            "headers": Object.assign({}, ctx.request.headers),
+        }
+        Object.assign(keys, ctx.token)
+        ctx._keys = keys
+    }
+
+    return key == "*" ? ctx._keys : ctx._keys[key]
 }
 
 function stringifyDate(obj) {
@@ -150,7 +202,7 @@ function stringifyDate(obj) {
     else if (Array.isArray(obj)) {
         obj.forEach(stringifyDate)
     }
-    else if (typeof obj == "object") {
+    else if (obj != null && typeof obj == "object") {
         Object.keys(obj).forEach(k => obj[k] = stringifyDate(obj[k]))
     }
     return obj

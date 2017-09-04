@@ -63,12 +63,22 @@ var SERIALIZER_MAP = {};
 var SERIALIZER = {
     'Bool': obj => Boolean(obj),
     'Double': obj => Number(obj),
-    'Long': obj => Long.fromValue(obj),
+    'Long': obj => patchForHessian(obj),
     'Int': obj => Number(obj),
     'String': obj => String(obj),
     'Date': obj => new Date(obj),
-    'Array': obj => Array.from(obj),
+    'Array': obj => obj && Array.from(obj),
 }
+
+function patchForHessian(obj) {
+    if (!obj && obj != 0) return obj
+    obj = Long.fromValue(obj)
+    if (obj.high == 0 && obj.low < 20) {
+        obj.length = obj.low.toString().length
+    }
+    return obj
+}
+
 const parseObj = function (obj, typeName) {
 
     let serializerName = SERIALIZER_MAP[typeName]
@@ -103,7 +113,8 @@ const seralizerArray = (fields, typeName) => (obj) => {
     } else if (typeName.indexOf("[") != -1) {
         realTypeName = typeName.split("[")[0]
     }
-    let result = obj.map(data => parseObj(data, realTypeName))
+    let result = [];
+    result = obj.map(data => parseObj(data, realTypeName))
     return result
 }
 
@@ -111,7 +122,7 @@ const seralizerObj = (fields, typeName) => (obj) => {
     if (!obj) return obj;
     let result = {}
     Object.keys(obj).forEach(k => {
-        let typeName = fields[k]
+        let typeName = fields[k] || fields["*"]
         if (!typeName) return;
         let value = obj[k]
         let serializerName = SERIALIZER_MAP[typeName]
@@ -122,6 +133,9 @@ const seralizerObj = (fields, typeName) => (obj) => {
             result[k] = value
         }
     })
+    if (typeName.indexOf("java.util.Map<") != -1) {
+        typeName = "java.util.Map"
+    }
     return { $class: typeName, $: result }
 }
 

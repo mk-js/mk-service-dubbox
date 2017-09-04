@@ -25,7 +25,7 @@ module.exports = index;
 function config(options) {
     var current = config.current
     Object.assign(current, options)
-    if(!current.group){
+    if (!current.group) {
         current.group = undefined
     }
     api._init(current)
@@ -34,7 +34,7 @@ config.current = {
     application: {
         name: "mk-server"
     },
-    mappingApi: [],
+    discoveryInterfaces: [],
     register: "127.0.0.1:2181",
     dubboVer: "2.8.4",
     group: '',

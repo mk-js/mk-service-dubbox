@@ -106,9 +106,14 @@ function serviceProxy(services, api) {
     Object.keys(services).forEach(key => Object.keys(services[key].methodSignature).forEach(method => {
         let methodName = method.name || method
         let service = api[key] = (api[key] || {})
-        let requestMapping = services[key].requestMapping
-        let serviceUrl = requestMapping && requestMapping["@"] || ""
-        let apiUrl =  requestMapping && requestMapping[methodName] || ""
+        let signature = services[key].methodSignature[methodName]
+        let mappings = services[key].requestMapping
+        let serviceUrl = mappings && mappings["@"] || ""
+        let apiUrl = mappings && mappings[methodName] || ""
+        if (apiUrl.indexOf("?") != -1) {
+            signature.apiContext = apiUrl.split("?")[1] || ""
+            apiUrl = apiUrl.split("?")[0]
+        }
         while (serviceUrl.endsWith("/")) serviceUrl = serviceUrl.substring(0, serviceUrl.length - 1)
         //dubbox.api.ILoginService.Ping
         service[methodName] = function () {
@@ -117,10 +122,18 @@ function serviceProxy(services, api) {
         if (apiUrl) {
             //dubbox.api.ILoginService_Ping
             let handlerWrapper = api[key + "_" + methodName] = function (data, ctx) {
-                var argsInfo = services[key].methodSignature[methodName](data)
+                var argsInfo = signature(data)
                 var args = argsInfo.map(arg => parseArgObj(arg, ctx))
                 console.log(`call dubbox api : ${key}.${methodName}`)
-                return nzdServer[key][methodName](...args).then(stringifyDate).catch(stringfyError)
+                return nzdServer[key][methodName](...args)
+                    .then(result => {
+                        if (signature.apiContext == "token" && ctx.setToken) {
+                            ctx.setToken(result.token)
+                        }
+                        return result
+                    })
+                    .then(stringifyDate)
+                    .catch(stringfyError)
             }
 
             handlerWrapper.apiUrl = serviceUrl + apiUrl.replace(/\,/g, "," + serviceUrl)

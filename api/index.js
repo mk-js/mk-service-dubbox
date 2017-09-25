@@ -26,7 +26,7 @@ function generateServices(interfaces, template) {
     let services = {}
     if (!interfaces || !Array.isArray(interfaces) || interfaces.length == 0) return services;
     interfaces.forEach(itf => {
-        let name = itf.split(".").pop()
+        let name = itf.replace(/\./g, '_')
         services[name] = Object.assign({}, template, { interface: itf })
     })
     return services

@@ -26,7 +26,7 @@ function generateServices(interfaces, template) {
     let services = {}
     if (!interfaces || !Array.isArray(interfaces) || interfaces.length == 0) return services;
     interfaces.forEach(itf => {
-        let name = itf.replace(/\./g, '_')
+        let name = itf.split(".").pop()
         services[name] = Object.assign({}, template, { interface: itf })
     })
     return services
@@ -40,17 +40,20 @@ function requestMapper(services) {
     }
     nzdServer.client.getChildren("/dubbo", null, function (err, children) {
         let method = "interfaceSerializer"
+        let jobCount = serviceNames.length
         serviceNames.forEach((itf, index) => {
             if (nzdServer[itf] && nzdServer[itf][method]) {
                 nzdServer[itf][method](children).then(apiMapInfo => {
                     console.log(JSON.stringify(apiMapInfo))
                     bindApiMapper(apiMapInfo, nzdServer)
-                    if (index == serviceNames.length - 1) {
+                    jobCount--
+                    if (jobCount == 0) {
                         startServer()
                     }
                 }).catch(ex => {
                     console.log(ex)
-                    if (index == serviceNames.length - 1) {
+                    jobCount--
+                    if (jobCount == 0) {
                         startServer()
                     }
                 })

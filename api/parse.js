@@ -4,45 +4,68 @@ var SERIALIZER_MAP = {};
 
 [
     'boolean',
-    'java.lang.Boolean',
     'bool',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'bool';
+});
+[
+    'java.lang.Boolean',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Bool';
 });
 
 [
     'double',
-    'java.lang.Double',
     'float',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'double';
+});
+
+[
+    'java.lang.Double',
     'java.lang.Float',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Double';
 });
 
 [
-    'java.lang.Long',
     'long',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'long';
+});
+
+[
+    'java.lang.Long',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Long';
 });
 
 [
     'short',
-    'java.lang.Short',
     'int',
-    'java.lang.Integer',
     'byte',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'int';
+});
+[
+    'java.lang.Short',
+    'java.lang.Integer',
     'java.lang.Byte',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Int';
 });
 
 [
-    'java.lang.String',
-    'String',
     'string',
     'char',
     'char[]',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'string';
+});
+
+[
+    'String',
+    'java.lang.String',
     'java.lang.Character',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'String';
@@ -61,12 +84,17 @@ var SERIALIZER_MAP = {};
 });
 
 var SERIALIZER = {
-    'Bool': obj => Boolean(obj),
-    'Double': obj => Number(obj),
-    'Long': obj => patchForHessian(obj),
-    'Int': obj => Number(obj),
-    'String': obj => String(obj),
-    'Date': obj => obj && new Date(obj) || null,
+    'bool': obj => Boolean(obj),
+    'Bool': obj => obj == null ? null : Boolean(obj),
+    'double': obj => Number(obj),
+    'Double': obj => obj == null ? null : Number(obj),
+    'long': obj => patchForHessian(obj),
+    'Long': obj => obj == null ? null : patchForHessian(obj),
+    'int': obj => Number(obj),
+    'Int': obj => obj == null ? null : Number(obj),
+    'string': obj => String(obj),
+    'String': obj => obj == null ? null : String(obj),
+    'Date': obj => obj == null ? null : new Date(obj),
     'Array': obj => obj && Array.from(obj),
 }
 

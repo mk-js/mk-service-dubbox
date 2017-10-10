@@ -107,11 +107,11 @@ function patchForHessian(obj) {
     return obj
 }
 
-const parseObj = function (obj, typeName) {
+const parseObj = function (obj, typeName, isFullFields) {
 
     let serializerName = SERIALIZER_MAP[typeName]
     if (SERIALIZER[serializerName]) {
-        return SERIALIZER[serializerName](obj)
+        return SERIALIZER[serializerName](obj, isFullFields)
     } else {
         return obj
     }
@@ -141,12 +141,15 @@ const seralizerArray = (fields, typeName) => (obj) => {
     } else if (typeName.indexOf("[") != -1) {
         realTypeName = typeName.split("[")[0]
     }
-    let result = [];
-    result = obj.map(data => parseObj(data, realTypeName))
+    let result = []; 
+    obj.forEach((data, index) => {
+        let isFullFields = (index === 0)
+        result.push(parseObj(data, realTypeName, isFullFields))
+    })
     return result
 }
 
-const seralizerObj = (fields, typeName) => (obj) => {
+const seralizerObj = (fields, typeName) => (obj, isFullFields) => {
     if (!obj) return obj;
     let result = {}
     Object.keys(obj).forEach(k => {
@@ -161,6 +164,22 @@ const seralizerObj = (fields, typeName) => (obj) => {
             result[k] = value
         }
     })
+    if (isFullFields === true) {
+        Object.keys(fields).filter(f => !obj.hasOwnProperty(f)).forEach(f => {
+            if (f.indexOf(".") != -1) {
+                obj[f] = undefined
+            } else {
+                let typeName = fields[f]
+                let serializerName = SERIALIZER_MAP[typeName]
+                if (SERIALIZER[serializerName]) {
+                    result[f] = SERIALIZER[serializerName](undefined)
+                } else {
+                    console.warn("parse.js,未找到类型对应的序列化方法,类型：" + typeName)
+                    result[f] = undefined
+                }
+            }
+        })
+    }
     if (typeName.indexOf("java.util.Map<") != -1) {
         typeName = "java.util.Map"
     }

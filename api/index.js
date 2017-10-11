@@ -146,7 +146,7 @@ function serviceProxy(services, api) {
 
 function stringfyError(err) {
     let error = { message: err.message }
-    if (err && err.message.indexOf("com.rrtimes.rap.vo.BusinessException:") == 0) {
+    if (err && err.message && err.message.indexOf("com.rrtimes.rap.vo.BusinessException:") == 0) {
         console.log("接口中未注明抛出业务异常：throws BusinessException;")
         error.message = err.message.split('com.rrtimes.rap.vo.BusinessException:')[1]
     }
@@ -213,7 +213,11 @@ function getCtxKeyValue(ctx, key) {
 function stringifyDate(obj) {
     if (!obj) return obj
     if (obj instanceof Date) {
-        return moment(obj).format("YYYY-MM-DD HH:mm:ss")
+        if (obj.getHours() == 0 && obj.getMinutes() == 0 && obj.getSeconds() == 0 && obj.getMilliseconds() == 0) {
+            return moment(obj).format("YYYY-MM-DD")
+        } else {
+            return moment(obj).format("YYYY-MM-DD HH:mm:ss")
+        }
     }
     else if (Array.isArray(obj)) {
         obj.forEach(stringifyDate)

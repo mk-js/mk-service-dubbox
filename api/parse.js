@@ -4,68 +4,45 @@ var SERIALIZER_MAP = {};
 
 [
     'boolean',
-    'bool',
-].forEach(function (t) {
-    SERIALIZER_MAP[t] = 'bool';
-});
-[
     'java.lang.Boolean',
+    'bool',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Bool';
 });
 
 [
     'double',
-    'float',
-].forEach(function (t) {
-    SERIALIZER_MAP[t] = 'double';
-});
-
-[
     'java.lang.Double',
+    'float',
     'java.lang.Float',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Double';
 });
 
 [
-    'long',
-].forEach(function (t) {
-    SERIALIZER_MAP[t] = 'long';
-});
-
-[
     'java.lang.Long',
+    'long',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Long';
 });
 
 [
     'short',
-    'int',
-    'byte',
-].forEach(function (t) {
-    SERIALIZER_MAP[t] = 'int';
-});
-[
     'java.lang.Short',
+    'int',
     'java.lang.Integer',
+    'byte',
     'java.lang.Byte',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Int';
 });
 
 [
+    'java.lang.String',
+    'String',
     'string',
     'char',
     'char[]',
-].forEach(function (t) {
-    SERIALIZER_MAP[t] = 'string';
-});
-
-[
-    'String',
-    'java.lang.String',
     'java.lang.Character',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'String';
@@ -84,17 +61,12 @@ var SERIALIZER_MAP = {};
 });
 
 var SERIALIZER = {
-    'bool': obj => Boolean(obj),
-    'Bool': obj => obj == null ? null : Boolean(obj),
-    'double': obj => Number(obj),
-    'Double': obj => obj == null ? null : Number(obj),
-    'long': obj => patchForHessian(obj),
-    'Long': obj => obj == null ? null : patchForHessian(obj),
-    'int': obj => Number(obj),
-    'Int': obj => obj == null ? null : Number(obj),
-    'string': obj => String(obj),
-    'String': obj => obj == null ? null : String(obj),
-    'Date': obj => obj == null ? null : new Date(obj),
+    'Bool': obj => Boolean(obj),
+    'Double': obj => Number(obj),
+    'Long': obj => patchForHessian(obj),
+    'Int': obj => Number(obj),
+    'String': obj => String(obj),
+    'Date': obj => obj && new Date(obj),
     'Array': obj => obj && Array.from(obj),
 }
 
@@ -141,7 +113,7 @@ const seralizerArray = (fields, typeName) => (obj) => {
     } else if (typeName.indexOf("[") != -1) {
         realTypeName = typeName.split("[")[0]
     }
-    let result = []; 
+    let result = [];
     obj.forEach((data, index) => {
         let isFullFields = (index === 0)
         result.push(parseObj(data, realTypeName, isFullFields))
@@ -166,10 +138,10 @@ const seralizerObj = (fields, typeName) => (obj, isFullFields) => {
     })
     if (isFullFields === true) {
         Object.keys(fields).filter(f => !obj.hasOwnProperty(f)).forEach(f => {
-            if (f.indexOf(".") != -1) {
-                obj[f] = undefined
+            let typeName = fields[f]
+            if (typeName.indexOf(".") != -1) {
+                result[f] = undefined
             } else {
-                let typeName = fields[f]
                 let serializerName = SERIALIZER_MAP[typeName]
                 if (SERIALIZER[serializerName]) {
                     result[f] = SERIALIZER[serializerName](undefined)

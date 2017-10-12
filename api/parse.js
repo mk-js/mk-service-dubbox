@@ -66,8 +66,8 @@ var SERIALIZER = {
     'Long': obj => patchForHessian(obj),
     'Int': obj => Number(obj),
     'String': obj => String(obj),
-    'Date': obj => obj && new Date(obj),
-    'Array': obj => obj && Array.from(obj),
+    'Date': obj => obj && new Date(obj) || null,
+    'Array': obj => obj && Array.from(obj) || null,
 }
 
 function patchForHessian(obj) {

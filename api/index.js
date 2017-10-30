@@ -1,4 +1,4 @@
-const NZD = require('./../lib/node-zookeeper-dubbox')
+const NZD = require('./../lib/node-zookeeper-dubbo')
 const moment = require("moment")
 const discovery = require("./discovery")
 const { regist, toHessian, toJS } = require("./parse")

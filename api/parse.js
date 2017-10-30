@@ -1,6 +1,7 @@
-var Long = require("long");
+const Long = require("long");
+const moment = require("moment")
 
-var SERIALIZER_MAP = {};
+const SERIALIZER_MAP = {};
 
 [
     'boolean',
@@ -28,20 +29,30 @@ var SERIALIZER_MAP = {};
 
 [
     'short',
-    'java.lang.Short',
     'int',
-    'java.lang.Integer',
     'byte',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'int';
+});
+
+[
+    'java.lang.Short',
+    'java.lang.Integer',
     'java.lang.Byte',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Int';
 });
 
 [
-    'java.lang.String',
     'String',
     'string',
     'char',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'string';
+});
+
+[
+    'java.lang.String',
     'char[]',
     'java.lang.Character',
 ].forEach(function (t) {
@@ -60,17 +71,101 @@ var SERIALIZER_MAP = {};
     SERIALIZER_MAP[t] = 'Date';
 });
 
-var SERIALIZER = {
+const SERIALIZER = {
     'Bool': obj => Boolean(obj),
     'Double': obj => Number(obj),
     'Long': obj => patchForHessian(obj),
-    'Int': obj => Number(obj),
-    'String': obj => String(obj),
-    'Date': obj => obj && new Date(obj) || null,
+    'Int': obj => obj === null || obj === undefined ? null : Number(obj),
+    'int': obj => Number(obj || 0),
+    'String': obj => obj && String(obj) || null,
+    'string': obj => obj && String(obj) || '',
+    'Date': obj => {
+        let date = obj && new Date(obj) || null
+        if (date) { //toUTC date
+            date.setMinutes(date.getTimezoneOffset())
+        }
+        return date
+    },
     'Array': obj => obj && Array.from(obj) || null,
 }
 
-function patchForHessian(obj) {
+const UNSERIALIZER = {
+    'Bool': obj => obj,
+    'Double': obj => obj,
+    'Long': obj => obj,
+    'Int': obj => obj,
+    'int': obj => obj,
+    'String': obj => obj,
+    'string': obj => obj,
+    'Array': obj => obj,
+    'Date': jsonifyDate,
+}
+
+function jsonifyDate(obj, pattern) {
+    if (!obj) return obj
+    if (obj instanceof Date) {
+        if (pattern) {
+            obj = moment(obj).format(pattern)
+        } else if (obj.getHours() == 0 && obj.getMinutes() == 0 && obj.getSeconds() == 0 && obj.getMilliseconds() == 0) {
+            obj = moment(obj).format("YYYY-MM-DD")
+        } else {
+            obj = moment(obj).format('YYYY-MM-DD HH:mm:ss')
+        }
+    }
+    console.log(`${pattern}:${obj}`)
+    return obj
+}
+
+const toHessian = (obj, typeName) => {
+
+    let serializerName = SERIALIZER_MAP[typeName]
+    if (SERIALIZER[serializerName]) {
+        return SERIALIZER[serializerName](obj)
+    } else {
+        return obj
+    }
+
+}
+
+const toJS = (obj) => {
+    return remove$(obj)
+}
+
+const regist = (typeName, fields, instance) => {
+    if (SERIALIZER_MAP[typeName]) return;
+    let fun = fields
+    fields = fields || []
+    let realFields = {};
+    Object.keys(fields).forEach(key => {
+        let fieldType = fields[key]
+        if (fieldType.indexOf('`') != -1) {
+            jsonTagHandler(realFields, { key, fieldType })
+        } else {
+            realFields[key] = fields[key]
+        }
+    })
+    if (typeof fun != "function") {
+        if (typeName.indexOf("List<") != -1 || typeName.indexOf("[") != -1) {
+            fun = jsArray2Hessian(typeName, realFields, instance)
+        } else {
+            fun = jsObj2Hessian(typeName, realFields, instance)
+        }
+    }
+    let funToJS = instance
+    if (typeof funToJS != 'function') {
+        if (typeName.indexOf("List<") != -1 || typeName.indexOf("[") != -1) {
+            funToJS = hessianArray2JS(typeName, realFields, instance)
+        } else {
+            funToJS = hessianObj2JS(typeName, realFields, instance)
+        }
+    }
+    SERIALIZER_MAP[typeName] = typeName
+    SERIALIZER[typeName] = fun
+    UNSERIALIZER[typeName] = funToJS
+}
+
+
+const patchForHessian = (obj) => {
     if (!obj && obj != 0) return obj
     obj = Long.fromValue(obj)
     if (obj.high == 0 && obj.low < 20) {
@@ -79,79 +174,139 @@ function patchForHessian(obj) {
     return obj
 }
 
-const parseObj = function (obj, typeName, isFullFields) {
-
-    let serializerName = SERIALIZER_MAP[typeName]
-    if (SERIALIZER[serializerName]) {
-        return SERIALIZER[serializerName](obj, isFullFields)
-    } else {
-        return obj
-    }
-
-}
-const regist = function (typeName, fields) {
-    if (SERIALIZER_MAP[typeName]) return;
-    let fun = fields
-    if (fields && typeof fun != "function") {
-        if (typeName.indexOf("List<") != -1 || typeName.indexOf("[") != -1) {
-            fun = seralizerArray(fields, typeName)
+const remove$ = (obj) => {
+    if (obj && obj.$ !== undefined && obj.$class) {
+        let mapKey = SERIALIZER_MAP[obj.$class]
+        if (mapKey && UNSERIALIZER[mapKey]) {
+            //console.log('have '+obj.$class) 
+            return UNSERIALIZER[mapKey](obj.$)
         } else {
-            fun = seralizerObj(fields, typeName)
+            console.log('not found: ' + obj.$class)
         }
     }
-    SERIALIZER_MAP[typeName] = typeName
-    SERIALIZER[typeName] = fun
+    if (obj && obj.$) return remove$(obj.$)
+    if (!obj || typeof obj != "object") return obj
+    if (obj instanceof Date) return jsonifyDate(obj)
+    Object.keys(obj).forEach(key => obj[key] = remove$(obj[key]))
+    return obj
 }
 
-const seralizerArray = (fields, typeName) => (obj) => {
+const jsonTagHandler = (realFields, { key, fieldType }) => {
+    let type = fieldType.split('`')[0]
+    let jsonTag = fieldType.substr(type.length)
+    jsonTag = jsonTag.split('`').join(';')
+
+    let handler = {
+        JsonIgnore: () => {
+            //"nullUpdate": "boolean`JsonIgnore('true')",
+            realFields[key] = null
+        },
+        JsonProperty: (alias) => {
+            //"newName": "java.lang.String`JsonProperty('name')",
+            realFields[key] = { alias, key, type }
+            realFields[alias] = { alias, key, type }
+        },
+        JsonFormat: (pattern) => {
+            if (pattern) {
+                pattern = pattern.replace('yyyy', 'YYYY')
+                pattern = pattern.replace('dd', 'DD')
+            }
+            realFields[key] = { pattern, key, type }
+            console.log(`${key}:${fieldType}:${pattern}`)
+        }
+    }
+    Function('handler', 'with(handler){' + jsonTag + '}')(handler)
+}
+
+const hessianArray2JS = (typeName, fields, instance) => (obj) => {
+    if (!obj || obj.length == 0) return obj
+
+    return obj.map(toJS)
+}
+
+const hessianObj2JS = (typeName, fields, instance) => (obj) => {
+    if (!obj) return obj
+    let result = {}
+    Object.keys(obj).forEach(k => {
+        let fieldType = fields[k] || fields["*"]
+        if (!fieldType) return;
+        let value = obj[k]
+        if (value && value.hasOwnProperty && value.hasOwnProperty('$')) {
+            value = value.$
+        }
+
+        let pattern = null
+        if (typeof fieldType == 'object') {
+            let meta = fieldType
+            if (meta.alias) {
+                k = meta.alias
+            }
+            pattern = meta.pattern
+            fieldType = meta.type
+        }
+
+        let serializerName = SERIALIZER_MAP[fieldType]
+        if (UNSERIALIZER[serializerName]) {
+            result[k] = UNSERIALIZER[serializerName](value, pattern)
+        } else {
+            console.warn("parse.js,hessianObj2JS,未找到类型对应的序列化方法,类型：" + fieldType)
+            result[k] = value
+        }
+    })
+
+    return result
+}
+
+const jsArray2Hessian = (typeName, fields, instance) => (obj) => {
     if (!obj) return obj;
     let realTypeName = typeName
     if (typeName.indexOf("List<") != -1) {
         realTypeName = typeName.replace(">", "").split("<")[1]
     } else if (typeName.indexOf("[") == 0) {
         realTypeName = typeName.substr(1)
+    } else if (typeName == 'byte[]') {
+        if (obj instanceof Buffer) {
+            return obj
+        } else {
+            return new Buffer(obj)
+        }
     } else if (typeName.indexOf("[") != -1) {
         realTypeName = typeName.split("[")[0]
     }
     let result = [];
     obj.forEach((data, index) => {
-        let isFullFields = (index === 0)
-        result.push(parseObj(data, realTypeName, isFullFields))
+        result.push(toHessian(data, realTypeName))
     })
     return result
 }
 
-const seralizerObj = (fields, typeName) => (obj, isFullFields) => {
+const jsObj2Hessian = (typeName, fields, instance) => (obj) => {
     if (!obj) return obj;
     let result = {}
     Object.keys(obj).forEach(k => {
-        let typeName = fields[k] || fields["*"]
-        if (!typeName) return;
+        let fieldType = fields[k] || fields["*"]
+        if (!fieldType) return;
         let value = obj[k]
-        let serializerName = SERIALIZER_MAP[typeName]
+        if (typeof fieldType == 'object') {
+            let meta = fieldType
+            if (k == meta.alias) {
+                k = meta.key
+            }
+            fieldType = fieldType.type
+        }
+        let serializerName = SERIALIZER_MAP[fieldType]
         if (SERIALIZER[serializerName]) {
             result[k] = SERIALIZER[serializerName](value)
         } else {
-            console.warn("parse.js,未找到类型对应的序列化方法,类型：" + typeName)
-            result[k] = value
+            console.warn("parse.js,未找到类型对应的序列化方法,类型：" + fieldType)
+            result[k] = toJS(value)
         }
     })
-    if (isFullFields === true) {
-        Object.keys(fields).filter(f => !obj.hasOwnProperty(f)).forEach(f => {
-            let typeName = fields[f]
-            if (typeName.indexOf(".") != -1) {
-                result[f] = undefined
-            } else {
-                let serializerName = SERIALIZER_MAP[typeName]
-                if (SERIALIZER[serializerName]) {
-                    result[f] = SERIALIZER[serializerName](undefined)
-                } else {
-                    console.warn("parse.js,未找到类型对应的序列化方法,类型：" + typeName)
-                    result[f] = undefined
-                }
-            }
-        })
+
+    if (instance) {
+        result = Object.assign({}, instance, result)
     }
+
     if (typeName.indexOf("java.util.Map<") != -1) {
         typeName = "java.util.Map"
     }
@@ -159,6 +314,7 @@ const seralizerObj = (fields, typeName) => (obj, isFullFields) => {
 }
 
 module.exports = {
-    parseObj,
     regist,
+    toHessian,
+    toJS,
 }

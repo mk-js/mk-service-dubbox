@@ -1,7 +1,7 @@
-const NZD = require('node-zookeeper-dubbo')
+const NZD = require('./../lib/node-zookeeper-dubbox')
 const moment = require("moment")
 const discovery = require("./discovery")
-const { parseObj, regist } = require("./parse")
+const { regist, toHessian, toJS } = require("./parse")
 
 var config
 var nzdServer = null
@@ -43,20 +43,22 @@ function requestMapper(services) {
         let jobCount = serviceNames.length
         serviceNames.forEach((itf, index) => {
             if (nzdServer[itf] && nzdServer[itf][method]) {
-                nzdServer[itf][method](children).then(apiMapInfo => {
-                    console.log(JSON.stringify(apiMapInfo))
-                    bindApiMapper(apiMapInfo, nzdServer)
-                    jobCount--
-                    if (jobCount == 0) {
-                        startServer()
-                    }
-                }).catch(ex => {
-                    console.log(ex)
-                    jobCount--
-                    if (jobCount == 0) {
-                        startServer()
-                    }
-                })
+                nzdServer[itf][method](children)
+                    .then(toJS)
+                    .then(apiMapInfo => {
+                        console.log(JSON.stringify(apiMapInfo))
+                        bindApiMapper(apiMapInfo, nzdServer)
+                        jobCount--
+                        if (jobCount == 0) {
+                            startServer()
+                        }
+                    }).catch(ex => {
+                        console.log(ex)
+                        jobCount--
+                        if (jobCount == 0) {
+                            startServer()
+                        }
+                    })
             }
         })
     })
@@ -66,7 +68,7 @@ function bindApiMapper(mappers) {
     var apis = {}
     mappers.forEach(itf => {
         if (itf.fields) {
-            return regist(itf.name, itf.fields)
+            return regist(itf.name, itf.fields, itf.instance)
         }
         let key = itf.name.split(".").pop()
         itf.methodSignature = {}
@@ -83,13 +85,22 @@ function bindApiMapper(mappers) {
                     arg.$realClass = $class
                     arg.$class = "[" + $class.split("[")[0]
                 }
+                if ($class == config.fileTypeName) {
+                    methodInfo.isUpoladFile = true
+                }
             })
-            itf.methodSignature[methodInfo.name] = function (data) {
-                return methodInfo.parameters.map((arg, index) => {
+            let signature = function (data) {
+                let args = methodInfo.parameters.map((arg, index) => {
                     let value = data && data[arg.$name] || arguments[index] || data
+                    if (arguments.length > 1 && methodInfo.parameters.length == arguments.length) {
+                        value = arguments[index]
+                    }
                     return Object.assign({}, arg, { $: value })
                 })
+                return args
             }
+            signature.methodInfo = methodInfo
+            itf.methodSignature[methodInfo.name] = signature
         })
     })
     Object.assign(nzdServer.dependencies, apis)
@@ -120,26 +131,32 @@ function serviceProxy(services, api) {
         while (serviceUrl.endsWith("/")) serviceUrl = serviceUrl.substring(0, serviceUrl.length - 1)
         //dubbox.api.ILoginService.Ping
         service[methodName] = function () {
-            return nzdServer[key][methodName](...arguments)
+            return nzdServer[key][methodName](...arguments).then(toJS)
         }
         if (apiUrl) {
             //dubbox.api.ILoginService_Ping
-            let handlerWrapper = api[key + "_" + methodName] = function (data, ctx) {
-                var argsInfo = signature(data)
-                var args = argsInfo.map(arg => parseArgObj(arg, ctx))
+            let handlerWrapper = function (data, ctx) {
+                let argsInfo = signature(data)
+                let returnType = signature.methodInfo.returnType
+                let args = argsInfo.map(arg => parseArgObj(arg, ctx))
                 console.log(`call dubbox api : ${key}.${methodName}`)
                 return nzdServer[key][methodName](...args)
+                    .then(toJS)
                     .then(result => {
+                        if (returnType && config.fileTypeName && returnType.$class == config.fileTypeName) {
+                            result.__downloadfile = true
+                        }
                         if (signature.apiContext == "token" && ctx.setToken) {
                             ctx.setToken(result.token)
                         }
                         return result
                     })
-                    .then(stringifyDate)
                     .catch(stringfyError)
             }
 
             handlerWrapper.apiUrl = serviceUrl + apiUrl.replace(/\,/g, "," + serviceUrl)
+            handlerWrapper.__uploadfile = signature.methodInfo.isUpoladFile
+            api[key + "_" + methodName] = handlerWrapper
         }
     }))
 }
@@ -165,7 +182,7 @@ function parseArgObj(arg, ctx) {
     if (arg.$ctx !== undefined && arg.$ctx !== null) {
         argValue = parseArgContext(arg, ctx)
     }
-    argValue = parseObj(argValue, argType)
+    argValue = toHessian(argValue, argType)
     argValue = argValue && argValue.$ || argValue
     return argValue
 }
@@ -209,25 +226,6 @@ function getCtxKeyValue(ctx, key) {
 
     return key == "*" ? ctx._keys : ctx._keys[key]
 }
-
-function stringifyDate(obj) {
-    if (!obj) return obj
-    if (obj instanceof Date) {
-        if (obj.getHours() == 0 && obj.getMinutes() == 0 && obj.getSeconds() == 0 && obj.getMilliseconds() == 0) {
-            return moment(obj).format("YYYY-MM-DD")
-        } else {
-            return moment(obj).format("YYYY-MM-DD HH:mm:ss")
-        }
-    }
-    else if (Array.isArray(obj)) {
-        obj.forEach(stringifyDate)
-    }
-    else if (obj != null && typeof obj == "object") {
-        Object.keys(obj).forEach(k => obj[k] = stringifyDate(obj[k]))
-    }
-    return obj
-}
-
 
 
 module.exports = api

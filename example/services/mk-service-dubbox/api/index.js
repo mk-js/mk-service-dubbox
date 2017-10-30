@@ -1,7 +1,7 @@
-const NZD = require('node-zookeeper-dubbo')
+const NZD = require('./../lib/node-zookeeper-dubbox')
 const moment = require("moment")
 const discovery = require("./discovery")
-const { parseObj, regist } = require("./parse")
+const { regist, toHessian, toJS } = require("./parse")
 
 var config
 var nzdServer = null
@@ -25,8 +25,8 @@ const api = {
 function generateServices(interfaces, template) {
     let services = {}
     if (!interfaces || !Array.isArray(interfaces) || interfaces.length == 0) return services;
-    interfaces.forEach(itf => {
-        let name = itf.split(".").pop()
+    interfaces.filter(itf => !!itf).forEach(itf => {
+        let name = itf.replace(/\./g, '_')
         services[name] = Object.assign({}, template, { interface: itf })
     })
     return services
@@ -40,20 +40,25 @@ function requestMapper(services) {
     }
     nzdServer.client.getChildren("/dubbo", null, function (err, children) {
         let method = "interfaceSerializer"
+        let jobCount = serviceNames.length
         serviceNames.forEach((itf, index) => {
             if (nzdServer[itf] && nzdServer[itf][method]) {
-                nzdServer[itf][method](children).then(apiMapInfo => {
-                    console.log(JSON.stringify(apiMapInfo))
-                    bindApiMapper(apiMapInfo, nzdServer)
-                    if (index == serviceNames.length - 1) {
-                        startServer()
-                    }
-                }).catch(ex => {
-                    console.log(ex)
-                    if (index == serviceNames.length - 1) {
-                        startServer()
-                    }
-                })
+                nzdServer[itf][method](children)
+                    .then(toJS)
+                    .then(apiMapInfo => {
+                        console.log(JSON.stringify(apiMapInfo))
+                        bindApiMapper(apiMapInfo, nzdServer)
+                        jobCount--
+                        if (jobCount == 0) {
+                            startServer()
+                        }
+                    }).catch(ex => {
+                        console.log(ex)
+                        jobCount--
+                        if (jobCount == 0) {
+                            startServer()
+                        }
+                    })
             }
         })
     })
@@ -63,7 +68,7 @@ function bindApiMapper(mappers) {
     var apis = {}
     mappers.forEach(itf => {
         if (itf.fields) {
-            return regist(itf.name, itf.fields)
+            return regist(itf.name, itf.fields, itf.instance)
         }
         let key = itf.name.split(".").pop()
         itf.methodSignature = {}
@@ -80,13 +85,22 @@ function bindApiMapper(mappers) {
                     arg.$realClass = $class
                     arg.$class = "[" + $class.split("[")[0]
                 }
+                if ($class == config.fileTypeName) {
+                    methodInfo.isUpoladFile = true
+                }
             })
-            itf.methodSignature[methodInfo.name] = function (data) {
-                return methodInfo.parameters.map((arg, index) => {
+            let signature = function (data) {
+                let args = methodInfo.parameters.map((arg, index) => {
                     let value = data && data[arg.$name] || arguments[index] || data
+                    if (arguments.length > 1 && methodInfo.parameters.length == arguments.length) {
+                        value = arguments[index]
+                    }
                     return Object.assign({}, arg, { $: value })
                 })
+                return args
             }
+            signature.methodInfo = methodInfo
+            itf.methodSignature[methodInfo.name] = signature
         })
     })
     Object.assign(nzdServer.dependencies, apis)
@@ -106,31 +120,50 @@ function serviceProxy(services, api) {
     Object.keys(services).forEach(key => Object.keys(services[key].methodSignature).forEach(method => {
         let methodName = method.name || method
         let service = api[key] = (api[key] || {})
-        let requestMapping = services[key].requestMapping
-        let serviceUrl = requestMapping && requestMapping["@"] || ""
-        let apiUrl =  requestMapping && requestMapping[methodName] || ""
+        let signature = services[key].methodSignature[methodName]
+        let mappings = services[key].requestMapping
+        let serviceUrl = mappings && mappings["@"] || ""
+        let apiUrl = mappings && mappings[methodName] || ""
+        if (apiUrl.indexOf("?") != -1) {
+            signature.apiContext = apiUrl.split("?")[1] || ""
+            apiUrl = apiUrl.split("?")[0]
+        }
         while (serviceUrl.endsWith("/")) serviceUrl = serviceUrl.substring(0, serviceUrl.length - 1)
         //dubbox.api.ILoginService.Ping
         service[methodName] = function () {
-            return nzdServer[key][methodName](...arguments)
+            return nzdServer[key][methodName](...arguments).then(toJS)
         }
         if (apiUrl) {
             //dubbox.api.ILoginService_Ping
-            let handlerWrapper = api[key + "_" + methodName] = function (data, ctx) {
-                var argsInfo = services[key].methodSignature[methodName](data)
-                var args = argsInfo.map(arg => parseArgObj(arg, ctx))
+            let handlerWrapper = function (data, ctx) {
+                let argsInfo = signature(data)
+                let returnType = signature.methodInfo.returnType
+                let args = argsInfo.map(arg => parseArgObj(arg, ctx))
                 console.log(`call dubbox api : ${key}.${methodName}`)
-                return nzdServer[key][methodName](...args).then(stringifyDate).catch(stringfyError)
+                return nzdServer[key][methodName](...args)
+                    .then(toJS)
+                    .then(result => {
+                        if (returnType && config.fileTypeName && returnType.$class == config.fileTypeName) {
+                            result.__downloadfile = true
+                        }
+                        if (signature.apiContext == "token" && ctx.setToken) {
+                            ctx.setToken(result.token)
+                        }
+                        return result
+                    })
+                    .catch(stringfyError)
             }
 
             handlerWrapper.apiUrl = serviceUrl + apiUrl.replace(/\,/g, "," + serviceUrl)
+            handlerWrapper.__uploadfile = signature.methodInfo.isUpoladFile
+            api[key + "_" + methodName] = handlerWrapper
         }
     }))
 }
 
 function stringfyError(err) {
     let error = { message: err.message }
-    if (err && err.message.indexOf("com.rrtimes.rap.vo.BusinessException:") == 0) {
+    if (err && err.message && err.message.indexOf("com.rrtimes.rap.vo.BusinessException:") == 0) {
         console.log("接口中未注明抛出业务异常：throws BusinessException;")
         error.message = err.message.split('com.rrtimes.rap.vo.BusinessException:')[1]
     }
@@ -149,7 +182,7 @@ function parseArgObj(arg, ctx) {
     if (arg.$ctx !== undefined && arg.$ctx !== null) {
         argValue = parseArgContext(arg, ctx)
     }
-    argValue = parseObj(argValue, argType)
+    argValue = toHessian(argValue, argType)
     argValue = argValue && argValue.$ || argValue
     return argValue
 }
@@ -193,21 +226,6 @@ function getCtxKeyValue(ctx, key) {
 
     return key == "*" ? ctx._keys : ctx._keys[key]
 }
-
-function stringifyDate(obj) {
-    if (!obj) return obj
-    if (obj instanceof Date) {
-        return moment(obj).format("YYYY-MM-DD HH:mm:ss")
-    }
-    else if (Array.isArray(obj)) {
-        obj.forEach(stringifyDate)
-    }
-    else if (obj != null && typeof obj == "object") {
-        Object.keys(obj).forEach(k => obj[k] = stringifyDate(obj[k]))
-    }
-    return obj
-}
-
 
 
 module.exports = api

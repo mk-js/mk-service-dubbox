@@ -258,7 +258,7 @@ const hessianObj2JS = (typeName, fields, instance) => (obj) => {
 }
 
 const jsArray2Hessian = (typeName, fields, instance) => (obj) => {
-    if (!obj) return obj;
+    if (!obj) return null;
     let realTypeName = typeName
     if (typeName.indexOf("List<") != -1) {
         realTypeName = typeName.replace(">", "").split("<")[1]
@@ -273,6 +273,7 @@ const jsArray2Hessian = (typeName, fields, instance) => (obj) => {
     } else if (typeName.indexOf("[") != -1) {
         realTypeName = typeName.split("[")[0]
     }
+    if(typeof obj == 'string')obj = obj.split(',') //for formpost download file
     let result = [];
     obj.forEach((data, index) => {
         result.push(toHessian(data, realTypeName))

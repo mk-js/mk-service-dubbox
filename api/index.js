@@ -94,6 +94,8 @@ function bindApiMapper(mappers) {
                     let value = data && data[arg.$name] || arguments[index] || data
                     if (arguments.length > 1 && methodInfo.parameters.length == arguments.length) {
                         value = arguments[index]
+                    } else if (arguments.length == 1 && data && data.hasOwnProperty && data.hasOwnProperty(arg.$name)) {
+                        value = data[arg.$name]
                     }
                     return Object.assign({}, arg, { $: value })
                 })

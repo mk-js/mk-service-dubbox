@@ -77,8 +77,8 @@ const SERIALIZER = {
     'Long': obj => patchForHessian(obj),
     'Int': obj => obj === null || obj === undefined ? null : Number(obj),
     'int': obj => Number(obj || 0),
-    'String': obj => obj && String(obj) || null,
-    'string': obj => obj && String(obj) || '',
+    'String': obj => obj != null ? String(obj) : null,
+    'string': obj => obj != null ? String(obj) : '',
     'Date': obj => {
         let date = obj && new Date(obj) || null
         if (date) { //toUTC date
@@ -273,7 +273,7 @@ const jsArray2Hessian = (typeName, fields, instance) => (obj) => {
     } else if (typeName.indexOf("[") != -1) {
         realTypeName = typeName.split("[")[0]
     }
-    if(typeof obj == 'string')obj = obj.split(',') //for formpost download file
+    if (typeof obj == 'string') obj = obj.split(',') //for formpost download file
     let result = [];
     obj.forEach((data, index) => {
         result.push(toHessian(data, realTypeName))

@@ -85,16 +85,17 @@ function bindApiMapper(mappers) {
                     arg.$realClass = $class
                     arg.$class = "[" + $class.split("[")[0]
                 }
-                if ($class == config.fileTypeName) {
+                if ($class == config.fileTypeName || config.fileTypeName.indexOf($class + ',') != -1) {
                     methodInfo.isUpoladFile = true
                 }
             })
             let signature = function (data) {
+                let methodArguments = arguments
                 let args = methodInfo.parameters.map((arg, index) => {
-                    let value = data && data[arg.$name] || arguments[index] || data
-                    if (arguments.length > 1 && methodInfo.parameters.length == arguments.length) {
-                        value = arguments[index]
-                    } else if (arguments.length == 1 && data && data.hasOwnProperty && data.hasOwnProperty(arg.$name)) {
+                    let value = data && data[arg.$name] || methodArguments[index] || data
+                    if (methodArguments.length > 1 && methodInfo.parameters.length == methodArguments.length) {
+                        value = methodArguments[index]
+                    } else if (methodArguments.length == 1 && data[arg.$name] !== undefined) {
                         value = data[arg.$name]
                     }
                     return Object.assign({}, arg, { $: value })
@@ -145,10 +146,11 @@ function serviceProxy(services, api) {
                 return nzdServer[key][methodName](...args)
                     .then(toJS)
                     .then(result => {
-                        if (returnType && config.fileTypeName && returnType.$class == config.fileTypeName) {
+                        if (result && returnType && config.fileTypeName
+                            && (returnType.$class == config.fileTypeName || config.fileTypeName.indexOf(returnType.$class + ',') != -1)) {
                             result.__downloadfile = true
                         }
-                        if (signature.apiContext == "token" && ctx.setToken) {
+                        if (result && signature.apiContext == "token" && ctx.setToken) {
                             ctx.setToken(result.token)
                         }
                         return result

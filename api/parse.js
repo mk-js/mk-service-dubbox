@@ -5,24 +5,39 @@ const SERIALIZER_MAP = {};
 
 [
     'boolean',
-    'java.lang.Boolean',
     'bool',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'bool';
+});
+
+[
+    'java.lang.Boolean',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Bool';
 });
 
 [
     'double',
-    'java.lang.Double',
     'float',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'double';
+});
+
+[
+    'java.lang.Double',
     'java.lang.Float',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Double';
 });
 
 [
-    'java.lang.Long',
     'long',
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'long';
+});
+
+[
+    'java.lang.Long',
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Long';
 });
@@ -72,13 +87,16 @@ const SERIALIZER_MAP = {};
 });
 
 const SERIALIZER = {
-    'Bool': obj => Boolean(obj),
-    'Double': obj => Number(obj),
-    'Long': obj => patchForHessian(obj),
-    'Int': obj => obj === null || obj === undefined ? null : Number(obj),
-    'int': obj => Number(obj || 0),
-    'String': obj => obj != null ? String(obj) : null,
-    'string': obj => obj != null ? String(obj) : '',
+    'bool': obj => ifNullElse(obj, false, toBoolean),
+    'Bool': obj => ifNullElse(obj, null, toBoolean),
+    'double': obj => ifNullElse(obj, 0, Number),
+    'Double': obj => ifNullElse(obj, null, Number),
+    'long': obj => ifNullElse(obj, 0, patchForHessian),
+    'Long': obj => ifNullElse(obj, null, patchForHessian),
+    'int': obj => ifNullElse(obj, 0, Number),
+    'Int': obj => ifNullElse(obj, null, Number),
+    'string': obj => ifNullElse(obj, '', String),
+    'String': obj => ifNullElse(obj, null, String),
     'Date': obj => {
         let date = obj && new Date(obj) || null
         if (date) { //toUTC date
@@ -89,14 +107,32 @@ const SERIALIZER = {
     'Array': obj => obj && Array.from(obj) || null,
 }
 
+function toBoolean(v) {
+    if (typeof v == 'string') {
+        return v.toLowerCase() == 'true'
+    }
+    return v
+}
+
+function ifNullElse(val, def, fun) {
+    if (val === null || val === undefined) {
+        return def
+    } else {
+        return fun(val)
+    }
+}
+
 const UNSERIALIZER = {
+    'bool': obj => obj,
     'Bool': obj => obj,
+    'double': obj => obj,
     'Double': obj => obj,
+    'long': obj => obj,
     'Long': obj => obj,
-    'Int': obj => obj,
     'int': obj => obj,
-    'String': obj => obj,
+    'Int': obj => obj,
     'string': obj => obj,
+    'String': obj => obj,
     'Array': obj => obj,
     'Date': jsonifyDate,
 }
@@ -112,7 +148,7 @@ function jsonifyDate(obj, pattern) {
             obj = moment(obj).format('YYYY-MM-DD HH:mm:ss')
         }
     }
-    console.log(`${pattern}:${obj}`)
+    // console.log(`${pattern}:${obj}`)
     return obj
 }
 
@@ -130,9 +166,9 @@ const toHessian = (obj, typeName) => {
 const toJS = (obj) => {
     return remove$(obj)
 }
-
 const regist = (typeName, fields, instance) => {
     if (SERIALIZER_MAP[typeName]) return;
+    SERIALIZER_MAP.__registed = true
     let fun = fields
     fields = fields || []
     let realFields = {};
@@ -180,7 +216,7 @@ const remove$ = (obj) => {
         if (mapKey && UNSERIALIZER[mapKey]) {
             //console.log('have '+obj.$class) 
             return UNSERIALIZER[mapKey](obj.$)
-        } else {
+        } else if (SERIALIZER_MAP.__registed) {
             console.log('not found: ' + obj.$class)
         }
     }
@@ -212,7 +248,7 @@ const jsonTagHandler = (realFields, { key, fieldType }) => {
                 pattern = pattern.replace('dd', 'DD')
             }
             realFields[key] = { pattern, key, type }
-            console.log(`${key}:${fieldType}:${pattern}`)
+            // console.log(`${key}:${fieldType}:${pattern}`)
         }
     }
     Function('handler', 'with(handler){' + jsonTag + '}')(handler)
@@ -227,10 +263,10 @@ const hessianArray2JS = (typeName, fields, instance) => (obj) => {
 const hessianObj2JS = (typeName, fields, instance) => (obj) => {
     if (!obj) return obj
     let result = {}
-    Object.keys(obj).forEach(k => {
-        let fieldType = fields[k] || fields["*"]
+    Object.keys(obj).forEach(key => {
+        let fieldType = fields[key] || fields["*"]
         if (!fieldType) return;
-        let value = obj[k]
+        let value = obj[key]
         if (value && value.hasOwnProperty && value.hasOwnProperty('$')) {
             value = value.$
         }
@@ -239,7 +275,7 @@ const hessianObj2JS = (typeName, fields, instance) => (obj) => {
         if (typeof fieldType == 'object') {
             let meta = fieldType
             if (meta.alias) {
-                k = meta.alias
+                key = meta.alias
             }
             pattern = meta.pattern
             fieldType = meta.type
@@ -247,10 +283,10 @@ const hessianObj2JS = (typeName, fields, instance) => (obj) => {
 
         let serializerName = SERIALIZER_MAP[fieldType]
         if (UNSERIALIZER[serializerName]) {
-            result[k] = UNSERIALIZER[serializerName](value, pattern)
+            result[key] = UNSERIALIZER[serializerName](value, pattern)
         } else {
             console.warn("parse.js,hessianObj2JS,未找到类型对应的序列化方法,类型：" + fieldType)
-            result[k] = value
+            result[key] = value
         }
     })
 
@@ -273,8 +309,8 @@ const jsArray2Hessian = (typeName, fields, instance) => (obj) => {
     } else if (typeName.indexOf("[") != -1) {
         realTypeName = typeName.split("[")[0]
     }
-    if (typeof obj == 'string') obj = obj.split(',') //for formpost download file
     let result = [];
+    if (typeof obj == "string") obj = obj.split(',')
     obj.forEach((data, index) => {
         result.push(toHessian(data, realTypeName))
     })

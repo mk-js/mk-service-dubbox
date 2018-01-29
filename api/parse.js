@@ -126,17 +126,17 @@ function ifNullElse(val, def, fun) {
     } else {
         return fun(val)
     }
-}
+} 
 
 const UNSERIALIZER = {
     'bool': obj => obj,
-    'Bool': obj => obj && obj.value || null,
+    'Bool': obj => obj,
     'double': obj => obj,
-    'Double': obj => obj && obj.value || null,
+    'Double': obj => obj,
     'long': obj => obj,
-    'Long': obj => obj && obj.value || null,
+    'Long': obj => obj,
     'int': obj => obj,
-    'Int': obj => obj && obj.value || null,
+    'Int': obj => obj,
     'BigDecimal': obj => obj && obj.value || null,
     'string': obj => obj,
     'String': obj => obj,

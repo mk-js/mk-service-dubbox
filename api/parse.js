@@ -85,6 +85,11 @@ const SERIALIZER_MAP = {};
 ].forEach(function (t) {
     SERIALIZER_MAP[t] = 'Date';
 });
+[
+    'java.math.BigDecimal'
+].forEach(function (t) {
+    SERIALIZER_MAP[t] = 'BigDecimal';
+});
 
 const SERIALIZER = {
     'bool': obj => ifNullElse(obj, false, toBoolean),
@@ -105,6 +110,7 @@ const SERIALIZER = {
         return date
     },
     'Array': obj => obj && Array.from(obj) || null,
+    'BigDecimal': obj => ifNullElse(obj, null, Number),
 }
 
 function toBoolean(v) {
@@ -124,13 +130,14 @@ function ifNullElse(val, def, fun) {
 
 const UNSERIALIZER = {
     'bool': obj => obj,
-    'Bool': obj => obj,
+    'Bool': obj => obj && obj.value || null,
     'double': obj => obj,
-    'Double': obj => obj,
+    'Double': obj => obj && obj.value || null,
     'long': obj => obj,
-    'Long': obj => obj,
+    'Long': obj => obj && obj.value || null,
     'int': obj => obj,
-    'Int': obj => obj,
+    'Int': obj => obj && obj.value || null,
+    'BigDecimal': obj => obj && obj.value || null,
     'string': obj => obj,
     'String': obj => obj,
     'Array': obj => obj,

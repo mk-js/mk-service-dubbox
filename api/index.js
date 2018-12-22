@@ -3,8 +3,8 @@ const moment = require("moment")
 const discovery = require("./discovery")
 const { regist, toHessian, toJS } = require("./parse")
 
-var config
-var nzdServer = null
+let config
+let nzdServer = null
 
 const api = {
     _init: (current) => {
@@ -14,10 +14,16 @@ const api = {
         nzdServer = new NZD(config)
         config.services._delayStart = true
         nzdServer.client.once('connected', function () {
-            requestMapper(config.dependencies, nzdServer)
+            requestMapper(config.dependencies)
             console.log('Connected to ZooKeeper.')
         });
         serviceProxy(services, api)
+    },
+    checkNZDService: (data, ctx) => {
+        nzdServer.client.getChildren("/dubbo", null, function (err, children) {
+            let arrServices = Object.keys(config.dependencies)
+            ctx.return(children.map(i => i.split('.').pop()).filter(i => arrServices.indexOf(i) == -1))
+        })
     },
     _proxy: serviceProxy,
 }
@@ -68,9 +74,9 @@ function bindApiMapper(mappers) {
     var apis = {}
     mappers.forEach(itf => {
         if (itf.fields) {
-            return regist(itf.name, itf.fields, itf.instance)
+            return regist(itf.name, itf.fields, itf.instance, config.returnNullValue)
         }
-        let key = itf.name.split(".").pop()
+        let key = itf.name.replace(/\./g, '_')
         itf.methodSignature = {}
         itf.interface = itf.name
         apis[key] = itf
@@ -80,7 +86,7 @@ function bindApiMapper(mappers) {
                 if (!$class) return;
                 if ($class.indexOf("<") != -1) {
                     arg.$realClass = $class
-                    arg.$class = $class.split("<")[0]
+                    arg.$class = $class.split("<")[0]//泛型参数要特殊处理？！
                 } else if ($class.indexOf("[") > 0) {
                     arg.$realClass = $class
                     arg.$class = "[" + $class.split("[")[0]
@@ -167,9 +173,9 @@ function serviceProxy(services, api) {
 
 function stringfyError(err) {
     let error = { message: err.message }
-    if (err && err.message && err.message.indexOf("com.rrtimes.rap.vo.BusinessException:") == 0) {
+    if (err && err.message && err.message.indexOf(config.errorTypeName) == 0) {
         console.log("接口中未注明抛出业务异常：throws BusinessException;")
-        error.message = err.message.split('com.rrtimes.rap.vo.BusinessException:')[1]
+        error.message = err.message.split(config.errorTypeName + ':')[1]
     }
     if (err.cause && err.cause.code) {
         error.code = err.cause.code
@@ -186,7 +192,7 @@ function parseArgObj(arg, ctx) {
     if (arg.$ctx !== undefined && arg.$ctx !== null) {
         argValue = parseArgContext(arg, ctx)
     }
-    argValue = toHessian(argValue, argType)
+    argValue = toHessian(argValue, argType, config)
     argValue = argValue && argValue.$ || argValue
     return argValue
 }
@@ -210,7 +216,11 @@ function parseArgContext(arg, ctx) {
                 argValue = ctxValue
             } else {
                 argValue = argValue || {}
-                argValue[argKey.trim()] = ctxValue
+                if (Array.isArray(argValue)) {
+                    argValue.forEach(v => v[argKey.trim()] = ctxValue)
+                } else {
+                    argValue[argKey.trim()] = ctxValue
+                }
             }
         })
     }
@@ -220,9 +230,11 @@ function parseArgContext(arg, ctx) {
 function getCtxKeyValue(ctx, key) {
     if (!ctx._keys) {
         let keys = {
-            token: Object.assign({}, ctx.token),
+            "token": Object.assign({}, ctx.token),
             "query": Object.assign({}, ctx.request.url.query),
             "headers": Object.assign({}, ctx.request.headers),
+            "accessIP": ctx.request.headers["x-real-ip"],
+            "path": ctx.request.path,
         }
         Object.assign(keys, ctx.token)
         ctx._keys = keys

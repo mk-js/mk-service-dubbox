@@ -100,17 +100,25 @@ const SERIALIZER = {
     'Long': obj => ifNullElse(obj, null, patchForHessian),
     'int': obj => ifNullElse(obj, 0, Number),
     'Int': obj => ifNullElse(obj, null, Number),
-    'string': obj => ifNullElse(obj, '', String),
-    'String': obj => ifNullElse(obj, null, String),
+    'string': obj => ifNullElse(obj, '', toString),
+    'String': obj => ifNullElse(obj, null, toString),
     'Date': obj => {
         let date = obj && new Date(obj) || null
-        if (date) { //toUTC date
-            date.setMinutes(date.getTimezoneOffset())
+        if (date && config.parseToUTCTime) { //toUTC date
+            date.setMinutes(date.getTimezoneOffset() + date.getMinutes())
         }
         return date
     },
     'Array': obj => obj && Array.from(obj) || null,
     'BigDecimal': obj => ifNullElse(obj, null, Number),
+}
+
+function toString(v){
+    if(typeof v == "object"){
+        return JSON.stringify(v)
+    }else{
+        return String(v)
+    }
 }
 
 function toBoolean(v) {
@@ -126,7 +134,7 @@ function ifNullElse(val, def, fun) {
     } else {
         return fun(val)
     }
-} 
+}
 
 const UNSERIALIZER = {
     'bool': obj => obj,
@@ -158,9 +166,10 @@ function jsonifyDate(obj, pattern) {
     // console.log(`${pattern}:${obj}`)
     return obj
 }
+let config = { parseToUTCTime: false }
+const toHessian = (obj, typeName, cfg) => {
 
-const toHessian = (obj, typeName) => {
-
+    if (cfg) config = cfg
     let serializerName = SERIALIZER_MAP[typeName]
     if (SERIALIZER[serializerName]) {
         return SERIALIZER[serializerName](obj)
@@ -173,7 +182,7 @@ const toHessian = (obj, typeName) => {
 const toJS = (obj) => {
     return remove$(obj)
 }
-const regist = (typeName, fields, instance) => {
+const regist = (typeName, fields, instance,returnNullValue) => {
     if (SERIALIZER_MAP[typeName]) return;
     SERIALIZER_MAP.__registed = true
     let fun = fields
@@ -199,7 +208,7 @@ const regist = (typeName, fields, instance) => {
         if (typeName.indexOf("List<") != -1 || typeName.indexOf("[") != -1) {
             funToJS = hessianArray2JS(typeName, realFields, instance)
         } else {
-            funToJS = hessianObj2JS(typeName, realFields, instance)
+            funToJS = hessianObj2JS(typeName, realFields, instance,returnNullValue)
         }
     }
     SERIALIZER_MAP[typeName] = typeName
@@ -213,6 +222,8 @@ const patchForHessian = (obj) => {
     obj = Long.fromValue(obj)
     if (obj.high == 0 && obj.low < 20) {
         obj.length = obj.low.toString().length
+    } else if (obj.high === -1 & obj.low ===-1) {
+        obj = -1
     }
     return obj
 }
@@ -267,7 +278,7 @@ const hessianArray2JS = (typeName, fields, instance) => (obj) => {
     return obj.map(toJS)
 }
 
-const hessianObj2JS = (typeName, fields, instance) => (obj) => {
+const hessianObj2JS = (typeName, fields, instance,returnNullValue) => (obj) => {
     if (!obj) return obj
     let result = {}
     Object.keys(obj).forEach(key => {
@@ -277,6 +288,7 @@ const hessianObj2JS = (typeName, fields, instance) => (obj) => {
         if (value && value.hasOwnProperty && value.hasOwnProperty('$')) {
             value = value.$
         }
+        if (returnNullValue === false && value === null) return;
 
         let pattern = null
         if (typeof fieldType == 'object') {
@@ -292,7 +304,7 @@ const hessianObj2JS = (typeName, fields, instance) => (obj) => {
         if (UNSERIALIZER[serializerName]) {
             result[key] = UNSERIALIZER[serializerName](value, pattern)
         } else {
-            console.warn("parse.js,hessianObj2JS,未找到类型对应的序列化方法,类型：" + fieldType)
+            console.warn("parse.js,hessianObj2JS,δ�ҵ����Ͷ�Ӧ�����л�����,���ͣ�" + fieldType)
             result[key] = value
         }
     })
@@ -342,7 +354,7 @@ const jsObj2Hessian = (typeName, fields, instance) => (obj) => {
         if (SERIALIZER[serializerName]) {
             result[k] = SERIALIZER[serializerName](value)
         } else {
-            console.warn("parse.js,未找到类型对应的序列化方法,类型：" + fieldType)
+            console.warn("parse.js,δ�ҵ����Ͷ�Ӧ�����л�����,���ͣ�" + fieldType)
             result[k] = toJS(value)
         }
     })

@@ -1,6 +1,6 @@
 {
   "name": "mk-service-dubbox",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "",
   "main": "index.js",
   "directories": {
@@ -20,7 +20,7 @@
   },
   "homepage": "https://github.com/lishengguo/mk-service-dubbox#readme",
   "dependencies": {
-    "mk-server": "^1.2.4",
+    "mk-server": "^1.4.2",
     "mk-service-auth": "^1.0.7",
     "hessian.js": "^2.1.8",
     "node-zookeeper-client": "0.2.2"

@@ -52,8 +52,10 @@ function requestMapper(services) {
                 nzdServer[itf][method](children)
                     .then(toJS)
                     .then(apiMapInfo => {
-                        console.log(JSON.stringify(apiMapInfo))
-                        bindApiMapper(apiMapInfo, nzdServer)
+                        if(apiMapInfo){  
+                            console.log(JSON.stringify(apiMapInfo))
+                            bindApiMapper(apiMapInfo, nzdServer)
+                        }
                         jobCount--
                         if (jobCount == 0) {
                             startServer()
@@ -156,8 +158,11 @@ function serviceProxy(services, api) {
                             && (returnType.$class == config.fileTypeName || config.fileTypeName.indexOf(returnType.$class + ',') != -1)) {
                             result.__downloadfile = true
                         }
-                        if (result && signature.apiContext == "token" && ctx.setToken) {
+                        if (result && signature.apiContext == "token" && ctx.setToken && result.token) {
                             ctx.setToken(result.token)
+                        }
+                        if(result && result.__jsonParse){
+                            result = JSON.parse(result.json)
                         }
                         return result
                     })
